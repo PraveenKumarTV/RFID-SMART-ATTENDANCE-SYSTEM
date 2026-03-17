@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>N-Queens Puzzle</title>
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background: linear-gradient(-45deg, #121212, #1a1a2e, #16213e, #0f3460);
+            background-size: 400% 400%;
+            animation: gradientBG 15s ease infinite;
+            user-select: none; /* Prevent text selection while playing */
+            min-height: 100vh;
+        }
+        
+        @keyframes gradientBG {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        .game-container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        /* Chessboard Grid */
+        #board {
+            display: grid;
+            border: 4px solid #343a40;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            border-radius: 4px;
+            margin: 0 auto;
+            width: 100%;
+            max-width: 100%;
+            aspect-ratio: 1 / 1;
+            background-color: #343a40;
+            gap: 1px; /* Creates grid lines */
+        }
+
+        .square {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: clamp(1.5rem, 5vw, 3rem);
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        /* Board Colors */
+        .light { background-color: #eeeed2; color: #333; }
+        .dark { background-color: #769656; color: #333; }
+        
+        /* Interactive States */
+        .square:hover {
+            opacity: 0.8;
+        }
+
+        .queen {
+            animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.4);
+        }
+
+        .conflict {
+            background-color: #dc3545 !important; /* Bootstrap Danger Red */
+            animation: shake 0.4s;
+        }
+
+        /* Animations */
+        @keyframes popIn {
+            0% { transform: scale(0); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        @keyframes shake {
+            0% { transform: translate(1px, 1px) rotate(0deg); }
+            10% { transform: translate(-1px, -2px) rotate(-1deg); }
+            20% { transform: translate(-3px, 0px) rotate(1deg); }
+            30% { transform: translate(3px, 2px) rotate(0deg); }
+            40% { transform: translate(1px, -1px) rotate(1deg); }
+            50% { transform: translate(-1px, 2px) rotate(-1deg); }
+            60% { transform: translate(-3px, 1px) rotate(0deg); }
+            70% { transform: translate(3px, 1px) rotate(-1deg); }
+            80% { transform: translate(-1px, -1px) rotate(1deg); }
+            90% { transform: translate(1px, 2px) rotate(0deg); }
+            100% { transform: translate(1px, -2px) rotate(-1deg); }
+        }
+        
+        .stats-badge {
+            font-size: 1.1rem;
+            padding: 10px 15px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container py-4 game-container">
+    <div class="text-center mb-4">
+        <h1 class="display-5 fw-bold text-primary">N-Queens Puzzle</h1>
+        <p class="text-muted">Place <span id="n-count">4</span> queens on the board so no two attack each other.</p>
+    </div>
+
+    <!-- Stats Dashboard -->
+    <div class="d-flex justify-content-between mb-3">
+        <span class="badge bg-secondary stats-badge">Level: <span id="level-display">4</span></span>
+        <span class="badge bg-info text-dark stats-badge">Queens: <span id="queens-count">0</span> / <span id="queens-target">4</span></span>
+        <span class="badge bg-warning text-dark stats-badge">Time: <span id="time-display">0:00</span></span>
+    </div>
+
+    <!-- Game Board -->
+    <div id="board" class="mb-4"></div>
+
+    <!-- Controls -->
+    <div class="d-flex justify-content-center gap-2">
+        <button class="btn btn-outline-danger" onclick="clearBoard()">Clear Board</button>
+        <button class="btn btn-outline-light" onclick="resetGame()">Restart Level</button>
+    </div>
+</div>
+
+<!-- Victory Modal -->
+<div class="modal fade" id="victoryModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content text-center">
+            <div class="modal-header border-0 justify-content-center">
+                <h2 class="modal-title text-success fw-bold">Level Cleared! 🎉</h2>
+            </div>
+            <div class="modal-body">
+                <p class="fs-5">You successfully placed all <span id="modal-n-count"></span> queens!</p>
+                <p>Time: <strong id="modal-time"></strong> | Moves: <strong id="modal-moves"></strong></p>
+            </div>
+            <div class="modal-footer border-0 justify-content-center">
+                <button type="button" class="btn btn-primary btn-lg px-5" onclick="nextLevel()">Next Level</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bootstrap JS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+<!-- Game Logic -->
+<script>
+    let N = 4; // Start level
+    let maxLevel = 10;
+    let queens = []; // Stores {r, c}
+    let moves = 0;
+    
+    // Timer variables
+    let timerInterval;
+    let secondsElapsed = 0;
+    let isTimerRunning = false;
+
+    const boardElement = document.getElementById('board');
+    const victoryModal = new bootstrap.Modal(document.getElementById('victoryModal'));
+
+    // Initialize Game
+    function initGame() {
+        queens = [];
+        moves = 0;
+        secondsElapsed = 0;
+        isTimerRunning = false;
+        clearInterval(timerInterval);
+        
+        updateStatsUI();
+        createBoardUI();
+    }
+
+    // Generate HTML Board
+    function createBoardUI() {
+        boardElement.innerHTML = '';
+        boardElement.style.gridTemplateColumns = `repeat(${N}, 1fr)`;
+        boardElement.style.gridTemplateRows = `repeat(${N}, 1fr)`;
+
+        for (let r = 0; r < N; r++) {
+            for (let c = 0; c < N; c++) {
+                const square = document.createElement('div');
+                square.classList.add('square');
+                // Standard chess board coloring
+                if ((r + c) % 2 === 0) {
+                    square.classList.add('light');
+                } else {
+                    square.classList.add('dark');
+                }
+                
+                square.dataset.row = r;
+                square.dataset.col = c;
+                square.addEventListener('click', () => handleSquareClick(r, c));
+                
+                boardElement.appendChild(square);
+            }
+        }
+    }
+
+    // Handle Player Move
+    function handleSquareClick(r, c) {
+        if (!isTimerRunning) startTimer();
+
+        const existingIndex = queens.findIndex(q => q.r === r && q.c === c);
+
+        if (existingIndex !== -1) {
+            // Remove queen
+            queens.splice(existingIndex, 1);
+        } else {
+            // Place queen if limit not reached
+            if (queens.length < N) {
+                queens.push({ r, c });
+                moves++;
+            } else {
+                // Flash board to indicate limit reached
+                boardElement.classList.add('conflict');
+                setTimeout(() => boardElement.classList.remove('conflict'), 200);
+                return;
+            }
+        }
+        
+        renderQueens();
+        checkGameState();
+    }
+
+    // Render Queens and Conflicts
+    function renderQueens() {
+        // Clear all states
+        document.querySelectorAll('.square').forEach(sq => {
+            sq.innerHTML = '';
+            sq.classList.remove('conflict');
+        });
+
+        const conflicts = findConflicts();
+
+        queens.forEach((q, index) => {
+            const square = document.querySelector(`.square[data-row="${q.r}"][data-col="${q.c}"]`);
+            square.innerHTML = '<span class="queen">♛</span>';
+            
+            // Highlight if in conflict
+            if (conflicts.includes(index)) {
+                square.classList.add('conflict');
+            }
+        });
+        
+        updateStatsUI();
+    }
+
+    // Logic: Identify conflicting queens
+    function findConflicts() {
+        let conflictIndices = new Set();
+        for (let i = 0; i < queens.length; i++) {
+            for (let j = i + 1; j < queens.length; j++) {
+                let q1 = queens[i];
+                let q2 = queens[j];
+                
+                // Same row, same col, or same diagonal
+                if (q1.r === q2.r || q1.c === q2.c || Math.abs(q1.r - q2.r) === Math.abs(q1.c - q2.c)) {
+                    conflictIndices.add(i);
+                    conflictIndices.add(j);
+                }
+            }
+        }
+        return Array.from(conflictIndices);
+    }
+
+    // Check Win Condition
+    function checkGameState() {
+        if (queens.length === N && findConflicts().length === 0) {
+            clearInterval(timerInterval);
+            
+            // Wait slightly for the final queen animation to render
+            setTimeout(() => {
+                document.getElementById('modal-n-count').innerText = N;
+                document.getElementById('modal-time').innerText = formatTime(secondsElapsed);
+                document.getElementById('modal-moves').innerText = moves;
+                victoryModal.show();
+            }, 300);
+        }
+    }
+
+    // UI Updates
+    function updateStatsUI() {
+        document.getElementById('n-count').innerText = N;
+        document.getElementById('level-display').innerText = N;
+        document.getElementById('queens-count').innerText = queens.length;
+        document.getElementById('queens-target').innerText = N;
+        document.getElementById('time-display').innerText = formatTime(secondsElapsed);
+    }
+
+    // Timer Logic
+    function startTimer() {
+        isTimerRunning = true;
+        timerInterval = setInterval(() => {
+            secondsElapsed++;
+            document.getElementById('time-display').innerText = formatTime(secondsElapsed);
+        }, 1000);
+    }
+
+    function formatTime(seconds) {
+        const m = Math.floor(seconds / 60);
+        const s = seconds % 60;
+        return `${m}:${s.toString().padStart(2, '0')}`;
+    }
+
+    // Control Buttons
+    function clearBoard() {
+        queens = [];
+        renderQueens();
+    }
+
+    function resetGame() {
+        initGame();
+    }
+
+    function nextLevel() {
+        victoryModal.hide();
+        if (N < maxLevel) {
+            N++;
+        }
+        initGame();
+    }
+
+    // Start App
+    initGame();
+
+</script>
+</body>
+</html>
