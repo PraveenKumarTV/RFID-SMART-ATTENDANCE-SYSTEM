@@ -49,9 +49,17 @@
             transition: background-color 0.2s;
         }
 
-        /* Board Colors */
-        .light { background-color: #eeeed2; color: #333; }
-        .dark { background-color: #769656; color: #333; }
+        /* Target colors - professional/modern palette */
+        .target-color-0 { background-color: #0a66c2 !important; } /* LinkedIn Blue */
+        .target-color-1 { background-color: #5f5f5f !important; } /* Slate Gray */
+        .target-color-2 { background-color: #6a4c93 !important; } /* Amethyst */
+        .target-color-3 { background-color: #1982c4 !important; } /* Cerulean */
+        .target-color-4 { background-color: #8ac926 !important; } /* Apple Green */
+        .target-color-5 { background-color: #ffca3a !important; } /* Sunglow Yellow */
+        .target-color-6 { background-color: #ff595e !important; } /* Coral Red */
+        .target-color-7 { background-color: #ca6702 !important; } /* Tiger Orange */
+        .target-color-8 { background-color: #bb3e03 !important; } /* Rust */
+        .target-color-9 { background-color: #006d77 !important; } /* Teal */
         
         /* Interactive States */
         .square:hover {
@@ -59,8 +67,9 @@
         }
 
         .queen {
+            color: white; /* For better contrast on colored squares */
             animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.4);
+            text-shadow: 1px 1px 3px rgba(0,0,0,0.7); /* Darker shadow for contrast */
         }
 
         .conflict {
@@ -99,7 +108,7 @@
 <div class="container py-4 game-container">
     <div class="text-center mb-4">
         <h1 class="display-5 fw-bold text-primary">N-Queens Puzzle</h1>
-        <p class="text-muted">Place <span id="n-count">4</span> queens on the board so no two attack each other.</p>
+        <p class="text-muted">Place <span id="n-count">4</span> queens so no two attack each other, with exactly one in each colored region.</p>
     </div>
 
     <!-- Stats Dashboard -->
@@ -144,8 +153,9 @@
 <script>
     let N = 4; // Start level
     let maxLevel = 10;
-    let queens = []; // Stores {r, c}
+    let queens = []; // Stores {r, c} of placed queens
     let moves = 0;
+    let cellColors = []; // Stores the color region index for each cell
     
     // Timer variables
     let timerInterval;
@@ -155,6 +165,109 @@
     const boardElement = document.getElementById('board');
     const victoryModal = new bootstrap.Modal(document.getElementById('victoryModal'));
 
+    // Generate a valid N-Queens solution to guarantee a winnable board
+    function getRandomSolution(size) {
+        let board = new Array(size).fill(-1);
+        let found = false;
+        let solution = null;
+
+        function isSafe(row, col) {
+            for (let i = 0; i < row; i++) {
+                if (board[i] === col || Math.abs(board[i] - col) === Math.abs(i - row)) return false;
+            }
+            return true;
+        }
+
+        function solve(row) {
+            if (found) return;
+            if (row === size) {
+                found = true;
+                solution = [...board];
+                return;
+            }
+            // Randomize column checking order
+            let cols = Array.from({length: size}, (_, i) => i).sort(() => Math.random() - 0.5);
+            for (let col of cols) {
+                if (isSafe(row, col)) {
+                    board[row] = col;
+                    solve(row + 1);
+                }
+            }
+        }
+        solve(0);
+        return solution.map((col, row) => ({ r: row, c: col }));
+    }
+
+    // Partition the board into N colored regions ensuring 1 solution point per region
+    function generateRegions() {
+        let solution = getRandomSolution(N);
+        cellColors = Array.from({ length: N }, () => new Array(N).fill(-1));
+        
+        let queues = [];
+        for (let i = 0; i < N; i++) {
+            cellColors[solution[i].r][solution[i].c] = i;
+            queues.push([{ r: solution[i].r, c: solution[i].c }]);
+        }
+        
+        let unassignedCount = N * N - N;
+        const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+        let loopLimit = 10000; // Failsafe
+        
+        // Flood fill to grow regions
+        while (unassignedCount > 0 && loopLimit > 0) {
+            loopLimit--;
+            let expandedAny = false;
+            let regions = Array.from({length: N}, (_, i) => i).sort(() => Math.random() - 0.5);
+            
+            for (let i of regions) {
+                let q = queues[i];
+                if (q.length === 0) continue;
+                
+                let cellIndex = Math.floor(Math.random() * q.length);
+                let cell = q[cellIndex];
+                let shuffledDirs = [...dirs].sort(() => Math.random() - 0.5);
+                let expanded = false;
+                
+                for (let d of shuffledDirs) {
+                    let nr = cell.r + d[0];
+                    let nc = cell.c + d[1];
+                    
+                    if (nr >= 0 && nr < N && nc >= 0 && nc < N && cellColors[nr][nc] === -1) {
+                        cellColors[nr][nc] = i;
+                        q.push({ r: nr, c: nc });
+                        unassignedCount--;
+                        expanded = true;
+                        expandedAny = true;
+                        break; // Expand one cell per region per turn
+                    }
+                }
+                
+                if (!expanded) {
+                    q.splice(cellIndex, 1); // Remove stuck frontier cells
+                }
+            }
+            
+            // Fallback for isolated cells (holes)
+            if (!expandedAny && unassignedCount > 0) {
+                for (let r = 0; r < N; r++) {
+                    for (let c = 0; c < N; c++) {
+                        if (cellColors[r][c] === -1) {
+                            for (let d of dirs) {
+                                let nr = r + d[0], nc = c + d[1];
+                                if (nr >= 0 && nr < N && nc >= 0 && nc < N && cellColors[nr][nc] !== -1) {
+                                    cellColors[r][c] = cellColors[nr][nc];
+                                    queues[cellColors[nr][nc]].push({r, c});
+                                    unassignedCount--;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // Initialize Game
     function initGame() {
         queens = [];
@@ -163,6 +276,7 @@
         isTimerRunning = false;
         clearInterval(timerInterval);
         
+        generateRegions();
         updateStatsUI();
         createBoardUI();
     }
@@ -177,12 +291,7 @@
             for (let c = 0; c < N; c++) {
                 const square = document.createElement('div');
                 square.classList.add('square');
-                // Standard chess board coloring
-                if ((r + c) % 2 === 0) {
-                    square.classList.add('light');
-                } else {
-                    square.classList.add('dark');
-                }
+                square.classList.add(`target-color-${cellColors[r][c]}`);
                 
                 square.dataset.row = r;
                 square.dataset.col = c;
@@ -250,8 +359,15 @@
                 let q1 = queens[i];
                 let q2 = queens[j];
                 
-                // Same row, same col, or same diagonal
-                if (q1.r === q2.r || q1.c === q2.c || Math.abs(q1.r - q2.r) === Math.abs(q1.c - q2.c)) {
+                let color1 = cellColors[q1.r][q1.c];
+                let color2 = cellColors[q2.r][q2.c];
+                
+                // Same row, same col, same diagonal, OR same color region
+                if (q1.r === q2.r || 
+                    q1.c === q2.c || 
+                    Math.abs(q1.r - q2.r) === Math.abs(q1.c - q2.c) || 
+                    color1 === color2) {
+                    
                     conflictIndices.add(i);
                     conflictIndices.add(j);
                 }
